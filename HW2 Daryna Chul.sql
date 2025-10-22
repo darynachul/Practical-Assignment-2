@@ -46,9 +46,10 @@ GROUP BY c.customer_id, c.name, c.email;
 
 
 --  OPTIMIZED QUERY
-CREATE INDEX idx_orders_status_customer ON orders(status, customer_id); -- Creation of this index on the status column and customer_id column helps to find completed orders fast without scanning all table 
+CREATE INDEX idx_orders_status_customer ON orders(status, customer_id, order_id); -- Creation of this covering index helps to find completed orders fast without scanning all table and extract status, customer_id, order_id
 CREATE INDEX idx_order_items_cover ON order_items(order_id, quantity, price); -- Creation of this covering index helps to exptract price and quantity for query, speed up JOIN between tables orders and order_items 
-CREATE INDEX idx_customers_grouping ON customers(customer_id, email, name); -- Creation of this index extracts customer_id, email, name required for grouping and helps to avoid scanning all table
+CREATE INDEX idx_customers_grouping ON customers(customer_id, email, name); -- Creation of this covering index extracts customer_id, email, name required for grouping and helps to avoid scanning all table
+
 
 WITH completed_orders AS (
     SELECT o.customer_id, o.order_id
@@ -72,15 +73,12 @@ GROUP BY c.customer_id, c.name, c.email; -- Groups the results based on customer
 -- EXPLAIN ANALYZE
 --  NON-OPTIMIZED QUERY 
 EXPLAIN ANALYZE
-SELECT 
-    c.customer_id,
-    c.name,
-    c.email,
-    SUM(oi.quantity) AS total_products,
-    SUM(oi.quantity * oi.price) AS total_payment
-FROM customers c
-JOIN orders o ON c.customer_id = o.customer_id
-JOIN order_items oi ON o.order_id = oi.order_id
+SELECT
+  c.name,
+  SUM(oi.quantity * oi.price)
+FROM customers c IGNORE INDEX (idx_customers_grouping)
+JOIN orders o IGNORE INDEX (idx_orders_status_customer) ON c.customer_id = o.customer_id
+JOIN order_items oi  IGNORE INDEX (idx_order_items_cover) ON o.order_id = oi.order_id
 WHERE o.status = 'Completed'
 GROUP BY c.customer_id, c.name, c.email;
 --  OPTIMIZED QUERY
@@ -125,5 +123,8 @@ FROM customers c USE INDEX (idx_customers_grouping)
 JOIN completed_orders co USE INDEX (idx_order_items_cover) ON c.customer_id = co.customer_id
 JOIN order_items oi USE INDEX (idx_order_items_cover) ON co.order_id = oi.order_id
 GROUP BY c.customer_id, c.name, c.email;
+
+
+
 
 
